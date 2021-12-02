@@ -110,13 +110,13 @@ Private Sub TextBox1_keydown(ByVal KeyCode As MSForms.ReturnInteger, ByVal Shift
             Me.ListBox2.AddItem TextBox1.Value
             Me.TextBox1.Value = ""
             Me.TextBox1.SetFocus
-        Else: MsgBox "輸入編號長度不足"
+        Else: MsgBox "Require Longer Input Length"
         End If
     End If
 End Sub
 
 'Private Sub UserForm_Activate()
-'    xlsCheck = MsgBox("已備妥從SAP匯出的財產清單在相同資料夾?", vbYesNo + vbQuestion, "IMPORT")
+'    xlsCheck = MsgBox("XLSX file from SAP is in this folder?", vbYesNo + vbQuestion, "IMPORT")
 '    If xlsCheck = vbYes Then Call xls_import
 'End Sub
 
