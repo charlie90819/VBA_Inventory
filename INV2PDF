@@ -1,0 +1,232 @@
+Private Sub CommandButton1_Click()
+    Dim ictr As Long, i As Long, shpCount As Long, txtCount As Long, missCount As Long
+    Dim sld As Slide, shp As Shape
+    Dim inventoryNO As String, strMiss As String
+    Dim coll_sld As New Collection, arrMiss As Variant
+    
+    'Check at least one item selected
+    If Me.ListBox2.ListCount < 1 Then
+        MsgBox ("At leat choose one item to highlight")
+        Exit Sub
+    End If
+    'Mark shape with content match to taget
+    ReDim arrMiss(1 To Me.ListBox2.ListCount)
+    For ictr = 0 To Me.ListBox2.ListCount - 1
+        inventoryNO = Left(Me.ListBox2.List(ictr), 4) & "_" & Right(Me.ListBox2.List(ictr), 3)
+        For Each sld In ActivePresentation.Slides
+            For Each shp In sld.Shapes
+                If shp.HasTextFrame And shp.TextFrame.HasText Then
+                        shpCount = shpCount + 1
+                        If Not shp.TextFrame.TextRange.Find(FindWhat:=inventoryNO) Is Nothing Then
+                            shp.Fill.ForeColor.RGB = RGB(255, 215, 0)
+                            txtCount = txtCount + 1 ' note if target shape exist
+                        Else: missCount = missCount + 1
+                        End If
+                End If
+            Next shp
+            If txtCount > 0 Then
+                coll_sld.Add sld.SlideNumber 'collect which slide has target inventory
+                txtCount = 0
+            End If
+        Next sld
+        If shpCount = missCount Then
+            arrMiss(ictr + 1) = Me.ListBox2.List(ictr)
+        End If
+        shpCount = 0
+        missCount = 0
+   Next ictr
+   
+   ' Alarm when some of selection can't be found in map
+    For j = LBound(arrMiss) To UBound(arrMiss)
+        If Not IsEmpty(arrMiss(j)) Then
+            strMiss = strMiss & arrMiss(j) & vbNewLine
+        End If
+    Next j
+    If Len(strMiss) > 0 Then
+        MsgBox "Following Selection can't be found in map" & vbNewLine & strMiss
+    End If
+    
+    'Save highlighted file as pdf file
+    If coll_sld.Count > 0 Then
+        For i = 1 To ActivePresentation.Slides.Count
+            ActivePresentation.Slides(i).SlideShowTransition.Hidden = msoTrue
+        Next i
+        For Each arr In coll_sld
+            ActivePresentation.Slides.Range(arr).SlideShowTransition.Hidden = msoFalse
+        Next arr
+        ActivePresentation.SaveAs ActivePresentation.Path & "\INVENTORY_MAP.pdf", ppSaveAsPDF
+        For i = 1 To ActivePresentation.Slides.Count
+            ActivePresentation.Slides(i).SlideShowTransition.Hidden = msoFalse
+        Next i
+        
+        'Open pdf file
+        Dim myShell As Object
+        Set myShell = CreateObject("WScript.Shell")
+        myShell.Run ActivePresentation.Path & "\INVENTORY_MAP.pdf"
+        Set myShell = Nothing
+        
+        'Close original file
+        Application.Quit
+    Else:
+        MsgBox "None of selection has been found" & vbNewLine & "Please check map file"
+        Exit Sub
+    End If
+End Sub
+
+Private Sub CommandButton3_Click()
+    Dim arrSTR As Variant
+    Dim i As Long
+    
+    Me.ListBox1.Clear
+    For Each sld In ActivePresentation.Slides
+        If sld.SlideNumber > 1 Then
+            For Each shp In sld.Shapes
+                If shp.HasTextFrame And shp.TextFrame.HasText Then
+                    If Len(shp.TextFrame.TextRange.Text) > 7 And InStr(1, shp.TextFrame.TextRange.Text, "_") > 0 Then
+                            For i = 5 To Len(shp.TextFrame.TextRange.Text)
+                                If Mid(shp.TextFrame.TextRange.Text, i, 1) = "_" Then
+                                    Me.ListBox1.AddItem Mid(shp.TextFrame.TextRange.Text, i - 4, 8)
+                                End If
+                            Next i
+                    End If
+                End If
+            Next shp
+        End If
+    Next sld
+    
+    'Allow multiple choice
+    Me.ListBox1.MultiSelect = fmMultiSelectMulti
+    Me.ListBox2.MultiSelect = fmMultiSelectMulti
+
+End Sub
+
+Private Sub CommandButton4_Click()
+    Me.ListBox2.Clear
+End Sub
+
+Private Sub TextBox1_keydown(ByVal KeyCode As MSForms.ReturnInteger, ByVal Shift As Integer)
+    If KeyCode = 13 Then
+        If Len(TextBox1.Value) > 6 Then
+            Me.ListBox2.AddItem TextBox1.Value
+            Me.TextBox1.Value = ""
+            Me.TextBox1.SetFocus
+        Else: MsgBox "輸入編號長度不足"
+        End If
+    End If
+End Sub
+
+'Private Sub UserForm_Activate()
+'    xlsCheck = MsgBox("已備妥從SAP匯出的財產清單在相同資料夾?", vbYesNo + vbQuestion, "IMPORT")
+'    If xlsCheck = vbYes Then Call xls_import
+'End Sub
+
+Private Sub CommandButton2_Click()
+    Call xls_import
+End Sub
+
+Private Sub xls_import()
+    Dim map_path As String
+    Dim xlsapp As Object
+    Dim i As Long, lastrow As Long, k As Long
+    
+    map_path = ActivePresentation.Path & "\"
+    Me.ListBox1.Clear
+
+    
+    ' check if exported file (from SAP) exists in same path of ppt of map
+    xls = Dir(map_path & "export.XLSX")
+    If xls <> "" Then
+        Set xlsapp = CreateObject("Excel.Application")
+        xlsapp.Visible = True
+        xlsapp.workbooks.Open (map_path & xls)
+    Else:
+        MsgBox "Can't find export.XLSX"
+        Exit Sub
+    End If
+    
+    'Load the inventory NO
+    With xlsapp.worksheets("Sheet1")
+        lastrow = .usedrange.Rows.Count
+        If .Range("A1") = "資產NO" Then ' for xls export from SAP ZFI010
+            For i = 2 To lastrow
+                ListBox1.AddItem .Cells(i, 1)
+            Next
+        Else: ' for xls export from SAP ZFI017_2
+            Dim collINV As New Collection
+            
+            'add unique item to collection
+            On Error Resume Next
+            For i = 2 To lastrow
+                If .Cells(i, 3).Value <> "" Then collINV.Add .Cells(i, 3).Value, CStr(.Cells(i, 3).Value)
+            Next i
+            On Error GoTo 0
+            
+            For k = 1 To collINV.Count
+               ListBox1.AddItem collINV(k)
+            Next k
+        End If
+    End With
+    
+    xlsapp.workbooks(xls).Close savechanges:=False
+    xlsapp.Quit
+    Set xlsapp = Nothing
+    
+    'Allow multiple choice
+    Me.ListBox1.MultiSelect = fmMultiSelectMulti
+    Me.ListBox2.MultiSelect = fmMultiSelectMulti
+
+End Sub
+
+Private Sub move_all_left_Click()
+    Dim ictr As Long
+
+    For ictr = 0 To Me.ListBox2.ListCount - 1
+        Me.ListBox1.AddItem Me.ListBox2.List(ictr)
+    Next ictr
+
+    Me.ListBox2.Clear
+End Sub
+
+Private Sub move_all_right_Click()
+    Dim ictr As Long
+
+    For ictr = 0 To Me.ListBox1.ListCount - 1
+        Me.ListBox2.AddItem Me.ListBox1.List(ictr)
+    Next ictr
+
+    Me.ListBox1.Clear
+End Sub
+
+Private Sub move_left_Click()
+    Dim ictr As Long
+
+    For ictr = 0 To Me.ListBox2.ListCount - 1
+        If Me.ListBox2.Selected(ictr) = True Then
+            Me.ListBox1.AddItem Me.ListBox2.List(ictr)
+        End If
+    Next ictr
+
+    For ictr = Me.ListBox2.ListCount - 1 To 0 Step -1
+        If Me.ListBox2.Selected(ictr) = True Then
+            Me.ListBox2.RemoveItem ictr
+        End If
+    Next ictr
+
+End Sub
+
+Private Sub move_right_Click()
+    Dim ictr As Long
+
+    For ictr = 0 To Me.ListBox1.ListCount - 1
+        If Me.ListBox1.Selected(ictr) = True Then
+            Me.ListBox2.AddItem Me.ListBox1.List(ictr)
+        End If
+    Next ictr
+
+    For ictr = Me.ListBox1.ListCount - 1 To 0 Step -1
+        If Me.ListBox1.Selected(ictr) = True Then
+            Me.ListBox1.RemoveItem ictr
+        End If
+    Next ictr
+
+End Sub
